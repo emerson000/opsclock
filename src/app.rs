@@ -302,8 +302,9 @@ impl App {
     }
 
     fn submit_timer(&mut self, raw: &str) {
-        match time::parse_duration(raw) {
-            Some(dur) if dur > 0 => {
+        // A relative duration (20m / 1h30m / 00:20:00) makes a countdown timer.
+        if let Some(dur) = time::parse_duration(raw) {
+            if dur > 0 {
                 let name = self.kind_name("TIMER", true);
                 self.clocks.push(Clock::Timer {
                     name,
@@ -316,8 +317,36 @@ impl App {
                 });
                 self.sel = self.clocks.len() - 1;
                 self.mode = Mode::Normal;
+                return;
             }
-            _ => self.set_input_error("BAD DURATION"),
+        }
+        // Otherwise, a natural-language target date/time ("tomorrow at 12pm").
+        let tz = jiff::tz::TimeZone::system();
+        if let Some(target) = time::parse_target(raw, self.now(), &tz) {
+            let name = self.countdown_name();
+            self.clocks.push(Clock::Countdown {
+                name,
+                target,
+                led: self.led_default,
+                notified: false,
+            });
+            self.sel = self.clocks.len() - 1;
+            self.mode = Mode::Normal;
+            return;
+        }
+        self.set_input_error("BAD DURATION / DATE");
+    }
+
+    fn countdown_name(&self) -> String {
+        let n = self
+            .clocks
+            .iter()
+            .filter(|c| matches!(c, Clock::Countdown { .. }))
+            .count();
+        if n == 0 {
+            "COUNTDOWN".to_string()
+        } else {
+            format!("COUNTDOWN {}", n + 1)
         }
     }
 
@@ -403,6 +432,17 @@ impl App {
                         notify_timer(name);
                         *notified = true;
                     }
+                }
+            } else if let Clock::Countdown {
+                name,
+                target,
+                notified,
+                ..
+            } = c
+            {
+                if !*notified && now.as_millisecond() >= target.as_millisecond() {
+                    notify_timer(name);
+                    *notified = true;
                 }
             }
         }
@@ -504,6 +544,32 @@ mod tests {
         assert_eq!(a.clocks.len(), 5);
         assert!(matches!(a.clocks[4], Clock::Timer { .. }));
         assert_eq!(a.sel, 4);
+    }
+
+    #[test]
+    fn timer_prompt_accepts_date_target() {
+        let mut a = app4();
+        a.on_key(press('T'));
+        for ch in "tomorrow at 12pm".chars() {
+            a.on_key(press(ch));
+        }
+        a.on_key(key(KeyCode::Enter));
+        assert_eq!(a.clocks.len(), 5);
+        assert!(matches!(a.clocks[4], Clock::Countdown { .. }));
+        assert_eq!(a.clocks[4].name(), "COUNTDOWN");
+        assert!(matches!(a.mode, Mode::Normal));
+    }
+
+    #[test]
+    fn bad_timer_input_keeps_prompt() {
+        let mut a = app4();
+        a.on_key(press('T'));
+        for ch in "wibble".chars() {
+            a.on_key(press(ch));
+        }
+        a.on_key(key(KeyCode::Enter));
+        assert!(matches!(a.mode, Mode::Input { error: Some(_), .. }));
+        assert_eq!(a.clocks.len(), 4);
     }
 
     #[test]

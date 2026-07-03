@@ -216,7 +216,7 @@ fn draw_input(f: &mut Frame, area: Rect, app: &App) {
     let sel_name = app.clocks.get(app.sel).map(|c| c.name()).unwrap_or("");
     let prompt = match kind {
         InputKind::SetTime => format!("SET TIME @ {} ▸", sel_name),
-        InputKind::Timer => "NEW TIMER (20m / 1h30m / 00:20:00) ▸".to_string(),
+        InputKind::Timer => "NEW TIMER (20m / 1h30m / tomorrow at 12pm) ▸".to_string(),
         InputKind::Add => "ADD CLOCK (city / UTC+5:30) ▸".to_string(),
     };
     let cursor = if app.blink { "█" } else { " " };
@@ -372,6 +372,19 @@ fn build_view(app: &App, i: usize, disp: jiff::Timestamp, now: jiff::Timestamp, 
             sub = "STOPWATCH".to_string();
             status = if is_running(clock) { "RUNNING" } else { "PAUSED" }.to_string();
         }
+        Clock::Countdown { target, .. } => {
+            let rem = clock.remaining_ms(now);
+            expired = clock.expired(now);
+            time_text = format!("T-{}", time::fmt_dur(rem));
+            let z = target.to_zoned(jiff::tz::TimeZone::system());
+            sub = format!("→ {}", z.strftime("%a %d %b %H:%M"));
+            status = if expired {
+                status_bright = true;
+                "REACHED".to_string()
+            } else {
+                "COUNTING".to_string()
+            };
+        }
     }
 
     // Sidebar compact sub: short offset / ↓timer / ↑stopwatch, or day chip.
@@ -388,6 +401,7 @@ fn build_view(app: &App, i: usize, disp: jiff::Timestamp, now: jiff::Timestamp, 
                 .to_string(),
             Clock::Timer { .. } => format!("↓{}", time::fmt_dur(clock.current_ms(now))),
             Clock::Stopwatch { .. } => "↑".to_string(),
+            Clock::Countdown { .. } => format!("↓{}", time::fmt_dur(clock.remaining_ms(now))),
         }
     };
 

@@ -52,6 +52,13 @@ pub enum Clock {
         last_start: Timestamp,
         led: bool,
     },
+    /// Counts down to a fixed absolute instant (a date/time), then holds at zero.
+    Countdown {
+        name: String,
+        target: Timestamp,
+        led: bool,
+        notified: bool,
+    },
 }
 
 /// Milliseconds elapsed from `a` to `b` (may be negative).
@@ -62,23 +69,28 @@ pub fn ms_between(a: Timestamp, b: Timestamp) -> i64 {
 impl Clock {
     pub fn name(&self) -> &str {
         match self {
-            Clock::Tz { name, .. } | Clock::Timer { name, .. } | Clock::Stopwatch { name, .. } => {
-                name
-            }
+            Clock::Tz { name, .. }
+            | Clock::Timer { name, .. }
+            | Clock::Stopwatch { name, .. }
+            | Clock::Countdown { name, .. } => name,
         }
     }
 
     pub fn led(&self) -> bool {
         match self {
-            Clock::Tz { led, .. } | Clock::Timer { led, .. } | Clock::Stopwatch { led, .. } => *led,
+            Clock::Tz { led, .. }
+            | Clock::Timer { led, .. }
+            | Clock::Stopwatch { led, .. }
+            | Clock::Countdown { led, .. } => *led,
         }
     }
 
     pub fn set_led(&mut self, v: bool) {
         match self {
-            Clock::Tz { led, .. } | Clock::Timer { led, .. } | Clock::Stopwatch { led, .. } => {
-                *led = v
-            }
+            Clock::Tz { led, .. }
+            | Clock::Timer { led, .. }
+            | Clock::Stopwatch { led, .. }
+            | Clock::Countdown { led, .. } => *led = v,
         }
     }
 
@@ -90,7 +102,7 @@ impl Clock {
     /// `current = elapsed + (running ? now - last_start : 0)`.
     pub fn current_ms(&self, now: Timestamp) -> i64 {
         match self {
-            Clock::Tz { .. } => 0,
+            Clock::Tz { .. } | Clock::Countdown { .. } => 0,
             Clock::Timer {
                 elapsed_ms,
                 running,
@@ -113,10 +125,21 @@ impl Clock {
         }
     }
 
-    /// A timer that has reached (or passed) its duration.
+    /// Milliseconds remaining for a countdown-to-date clock (0 for others).
+    pub fn remaining_ms(&self, now: Timestamp) -> i64 {
+        match self {
+            Clock::Countdown { target, .. } => {
+                (target.as_millisecond() - now.as_millisecond()).max(0)
+            }
+            _ => 0,
+        }
+    }
+
+    /// A timer/countdown that has reached (or passed) its target.
     pub fn expired(&self, now: Timestamp) -> bool {
         match self {
             Clock::Timer { duration_ms, .. } => self.current_ms(now) >= *duration_ms,
+            Clock::Countdown { target, .. } => now.as_millisecond() >= target.as_millisecond(),
             _ => false,
         }
     }
@@ -168,7 +191,8 @@ impl Clock {
                     }
                 }
             }
-            Clock::Tz { .. } => {}
+            // Countdown-to-date and tz clocks ignore run/pause.
+            Clock::Tz { .. } | Clock::Countdown { .. } => {}
         }
     }
 
@@ -197,7 +221,7 @@ impl Clock {
                 *last_start = now;
                 *running = false;
             }
-            Clock::Tz { .. } => {}
+            Clock::Tz { .. } | Clock::Countdown { .. } => {}
         }
     }
 }

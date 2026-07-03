@@ -27,6 +27,11 @@ pub enum ClockCfg {
         name: String,
         led: bool,
     },
+    Countdown {
+        name: String,
+        target_ms: i64,
+        led: bool,
+    },
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -137,6 +142,18 @@ impl Config {
                     last_start: now,
                     led: *led,
                 }),
+                ClockCfg::Countdown {
+                    name,
+                    target_ms,
+                    led,
+                } => Timestamp::from_millisecond(*target_ms)
+                    .ok()
+                    .map(|target| Clock::Countdown {
+                        name: name.clone(),
+                        target,
+                        led: *led,
+                        notified: false,
+                    }),
             })
             .collect()
     }
@@ -176,6 +193,13 @@ impl Config {
                 },
                 Clock::Stopwatch { name, led, .. } => ClockCfg::Stopwatch {
                     name: name.clone(),
+                    led: *led,
+                },
+                Clock::Countdown {
+                    name, target, led, ..
+                } => ClockCfg::Countdown {
+                    name: name.clone(),
+                    target_ms: target.as_millisecond(),
                     led: *led,
                 },
             })

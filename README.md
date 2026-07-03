@@ -48,8 +48,9 @@ CLI values augment/override the loaded config at startup.
 | `1` `2` `3` `4` | grid / split / sidebar / wall layout |
 | `l` | toggle LED matrix on the selected clock |
 | `t` | set time on the selected zone clock — converts **all** clocks (e.g. `17:00 tomorrow`) |
-| `T` | new countdown timer (`20m`, `1h30m`, `00:20:00`) |
+| `T` | new timer — a duration (`20m`, `1h30m`, `00:20:00`) **or** a target date/time (`tomorrow at 12pm`, `friday 3pm`, `dec 25`) |
 | `s` | new stopwatch (instant, counts up) |
+| `z` | zen mode — hide all chrome, showing only the time |
 | `space` | run / pause (or restart a timer held at zero) |
 | `r` | reset / restart the selected timer or stopwatch |
 | `a` | add a clock (city or `UTC+5:30`) |
@@ -69,6 +70,13 @@ move and `Enter`/`Esc` act; all other keys are swallowed.
 - **Timers** display `T-HH:MM:SS` remaining and, on reaching zero, **hold at
   `T-00:00:00` and blink** (~2 Hz) until restarted — they never go negative and
   are reusable. Stopwatches display `T+HH:MM:SS` counting up.
+- **Countdown to a date/time.** The `T` prompt also accepts natural-language
+  targets — `tomorrow at 12pm`, `friday 3pm`, `next monday 9am`, `dec 25`,
+  `2026-12-31 23:59`, `in 2 hours`, `noon`, `midnight`. The clock counts down to
+  that instant (resolved in your local timezone) and holds at zero when reached.
+- **Zen mode** (`z`) hides the header, key bar, banner, borders, names, and
+  footers across every layout — just the time. `z` or `Esc` exits; the input bar
+  and help/NTP overlays still appear when invoked.
 - **Set time** computes the instant of a wall time on that clock's civil date
   (optionally `+1` day) in that clock's zone, using jiff's DST-safe resolution,
   and shows it across every zone clock until `Esc`.
