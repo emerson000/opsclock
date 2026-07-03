@@ -61,6 +61,8 @@ pub struct App {
     pub offset_ms: i64,
     pub ntp: SyncState,
     pub led_default: bool,
+    /// Zen mode: hide all chrome and tile decoration, leaving only the time.
+    pub zen: bool,
     pub config_path: PathBuf,
     pub blink: bool,
 }
@@ -84,6 +86,7 @@ impl App {
             offset_ms: 0,
             ntp: SyncState::Idle,
             led_default: cfg.led_default,
+            zen: false,
             config_path,
             blink: false,
         }
@@ -193,7 +196,14 @@ impl App {
         match key.code {
             KeyCode::Right | KeyCode::Tab | KeyCode::Down => self.sel = (self.sel + 1) % n,
             KeyCode::Left | KeyCode::Up | KeyCode::BackTab => self.sel = (self.sel + n - 1) % n,
-            KeyCode::Esc => self.conv = None,
+            KeyCode::Esc => {
+                // Esc gives an obvious way out of zen mode; otherwise resume live.
+                if self.zen {
+                    self.zen = false;
+                } else {
+                    self.conv = None;
+                }
+            }
             KeyCode::Char(c) => return self.on_char(c, now),
             _ => {}
         }
@@ -217,6 +227,7 @@ impl App {
                     LabelMode::Mil => LabelMode::City,
                 }
             }
+            'z' => self.zen = !self.zen,
             't' => {
                 if self.clocks[self.sel].is_tz() {
                     self.mode = Mode::Input {

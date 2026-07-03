@@ -42,9 +42,32 @@ pub fn draw(f: &mut Frame, app: &App) {
     let local_disp = time::wall_of(&local_tz, disp);
     let local_day = time::day_number(&local_disp);
 
+    let input_on = matches!(app.mode, Mode::Input { .. });
+
+    // Zen mode: no header/banner/key bar — just the time, filling the screen.
+    // The input bar still appears while typing so prompts remain usable.
+    if app.zen {
+        let main = if input_on {
+            let parts = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Min(1), Constraint::Length(2)])
+                .split(area);
+            draw_input(f, parts[1], app);
+            parts[0]
+        } else {
+            area
+        };
+        draw_main(f, main, app, disp, now, local_day);
+        match &app.mode {
+            Mode::Help => draw_help(f, area),
+            Mode::Ntp { sel } => draw_ntp(f, area, app, *sel),
+            _ => {}
+        }
+        return;
+    }
+
     // Vertical chrome layout.
     let conv_on = app.conv.is_some();
-    let input_on = matches!(app.mode, Mode::Input { .. });
     let mut constraints = vec![Constraint::Length(2)]; // header
     if conv_on {
         constraints.push(Constraint::Length(2)); // banner
@@ -236,6 +259,7 @@ const KEYHINTS: &[(&str, &str)] = &[
     ("x", "CLOSE"),
     ("o", "LABELS"),
     ("n", "SYNC"),
+    ("z", "ZEN"),
     ("?", "HELP"),
 ];
 
@@ -265,29 +289,30 @@ fn draw_main(f: &mut Frame, area: Rect, app: &App, disp: jiff::Timestamp, now: j
         .map(|i| build_view(app, i, disp, now, local_day))
         .collect();
 
+    let zen = app.zen;
     match app.layout {
         L::Grid => {
             let rects = layouts::grid_rects(area, n);
             for (i, r) in rects.iter().enumerate() {
-                draw_tile(f, *r, &views[i], false);
+                draw_tile(f, *r, &views[i], zen);
             }
         }
         L::Split => {
             let rects = layouts::split_rects(area, n, app.sel);
             for (i, r) in rects.iter().enumerate() {
                 if r.width > 0 && r.height > 0 {
-                    draw_tile(f, *r, &views[i], false);
+                    draw_tile(f, *r, &views[i], zen);
                 }
             }
         }
         L::Sidebar => {
             let (_, rows) = layouts::sidebar_rows(area, n);
             for (i, r) in rows.iter().enumerate() {
-                draw_sidebar_row(f, *r, &views[i]);
+                draw_sidebar_row(f, *r, &views[i], zen);
             }
         }
         L::Wall => {
-            draw_wall(f, area, &views[app.sel]);
+            draw_wall(f, area, &views[app.sel], zen);
         }
     }
 }
@@ -390,7 +415,15 @@ fn is_running(c: &Clock) -> bool {
 
 // ---------- tiles ----------
 
-fn draw_tile(f: &mut Frame, area: Rect, v: &View, _wall: bool) {
+fn draw_tile(f: &mut Frame, area: Rect, v: &View, zen: bool) {
+    // Zen: no border, name, or footer — the time fills the whole cell.
+    if zen {
+        if area.width >= 2 && area.height >= 1 {
+            draw_body(f, area, v, false);
+        }
+        return;
+    }
+
     let border_style = if v.selected {
         Style::default().fg(c::BORDER_SEL)
     } else {
@@ -534,12 +567,23 @@ fn build_art(text: &str, dots: usize, lit: ratatui::style::Color, ghost: ratatui
     out
 }
 
-fn draw_sidebar_row(f: &mut Frame, area: Rect, v: &View) {
+fn draw_sidebar_row(f: &mut Frame, area: Rect, v: &View, zen: bool) {
     let label_style = if v.selected {
         Style::default().fg(c::SEL_LABEL).add_modifier(Modifier::BOLD)
     } else {
         Style::default().fg(c::BODY)
     };
+    // Zen: only the time, left-aligned, no name or sub.
+    if zen {
+        f.render_widget(
+            Paragraph::new(Line::from(Span::styled(
+                v.time_text.clone(),
+                Style::default().fg(c::LED),
+            ))),
+            area,
+        );
+        return;
+    }
     let mark = if v.selected { "▸ " } else { "  " };
     f.render_widget(
         Paragraph::new(Line::from(vec![
@@ -560,7 +604,12 @@ fn draw_sidebar_row(f: &mut Frame, area: Rect, v: &View) {
     );
 }
 
-fn draw_wall(f: &mut Frame, area: Rect, v: &View) {
+fn draw_wall(f: &mut Frame, area: Rect, v: &View, zen: bool) {
+    // Zen: just the giant time, no header or footer.
+    if zen {
+        draw_body(f, area, v, true);
+        return;
+    }
     let parts = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Length(1), Constraint::Min(1), Constraint::Length(1)])
@@ -612,7 +661,8 @@ const HELP_ROWS: &[(&str, &str)] = &[
     ("o", "labels: city ↔ military zone"),
     ("x", "close selected clock"),
     ("n", "time server sync"),
-    ("ESC", "resume live / close panel"),
+    ("z", "zen mode — hide all chrome, just the time"),
+    ("ESC", "resume live / exit zen / close panel"),
 ];
 
 fn draw_help(f: &mut Frame, area: Rect) {
