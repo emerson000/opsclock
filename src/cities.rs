@@ -1,44 +1,20 @@
-//! Resolve a user query ("tokyo", "UTC+5:30") to a display name + clock source.
-//! Order: curated city substring → jiff tzdb city match → fixed-offset parse.
+//! Resolve a user query ("tokyo", "atlanta", "UTC+5:30") to a display name +
+//! clock source. Order: curated city table (exact → prefix → substring) →
+//! fixed-offset parse → jiff tzdb city match.
 
+use crate::citydb::CITIES;
 use crate::model::Source;
 use crate::time::offset_str;
 
-/// The prototype's curated 32-city list: (display name, IANA zone).
-pub const CITIES: &[(&str, &str)] = &[
-    ("UTC", "UTC"),
-    ("LONDON", "Europe/London"),
-    ("PARIS", "Europe/Paris"),
-    ("BERLIN", "Europe/Berlin"),
-    ("CAIRO", "Africa/Cairo"),
-    ("MOSCOW", "Europe/Moscow"),
-    ("DUBAI", "Asia/Dubai"),
-    ("KARACHI", "Asia/Karachi"),
-    ("DELHI", "Asia/Kolkata"),
-    ("MUMBAI", "Asia/Kolkata"),
-    ("DHAKA", "Asia/Dhaka"),
-    ("BANGKOK", "Asia/Bangkok"),
-    ("SINGAPORE", "Asia/Singapore"),
-    ("HONG KONG", "Asia/Hong_Kong"),
-    ("SHANGHAI", "Asia/Shanghai"),
-    ("TOKYO", "Asia/Tokyo"),
-    ("SEOUL", "Asia/Seoul"),
-    ("SYDNEY", "Australia/Sydney"),
-    ("AUCKLAND", "Pacific/Auckland"),
-    ("HONOLULU", "Pacific/Honolulu"),
-    ("ANCHORAGE", "America/Anchorage"),
-    ("LOS ANGELES", "America/Los_Angeles"),
-    ("DENVER", "America/Denver"),
-    ("CHICAGO", "America/Chicago"),
-    ("HOUSTON", "America/Chicago"),
-    ("NEW YORK", "America/New_York"),
-    ("SAO PAULO", "America/Sao_Paulo"),
-    ("BUENOS AIRES", "America/Argentina/Buenos_Aires"),
-    ("REYKJAVIK", "Atlantic/Reykjavik"),
-    ("JOHANNESBURG", "Africa/Johannesburg"),
-    ("KYIV", "Europe/Kyiv"),
-    ("ISTANBUL", "Europe/Istanbul"),
-];
+/// Rank a query against the curated city table: exact match wins, then a city
+/// name that starts with the query, then any substring match.
+fn match_city(up: &str) -> Option<&'static (&'static str, &'static str)> {
+    CITIES
+        .iter()
+        .find(|(name, _)| *name == up)
+        .or_else(|| CITIES.iter().find(|(name, _)| name.starts_with(up)))
+        .or_else(|| CITIES.iter().find(|(name, _)| name.contains(up)))
+}
 
 /// Resolve a query to (display name, Source), or None on failure.
 pub fn resolve(query: &str) -> Option<(String, Source)> {
@@ -48,8 +24,8 @@ pub fn resolve(query: &str) -> Option<(String, Source)> {
     }
     let up = q.to_uppercase();
 
-    // 1. Curated substring match.
-    if let Some((name, zone)) = CITIES.iter().find(|(name, _)| name.contains(&up as &str)) {
+    // 1. Curated city table.
+    if let Some((name, zone)) = match_city(&up) {
         if let Ok(tz) = jiff::tz::TimeZone::get(zone) {
             return Some((name.to_string(), Source::Zone(tz)));
         }
@@ -61,7 +37,8 @@ pub fn resolve(query: &str) -> Option<(String, Source)> {
         return Some((format!("UTC{}", offset_str(off)), Source::Fixed(off)));
     }
 
-    // 3. tzdb city match (last path segment, `_`→space).
+    // 3. tzdb city match (last path segment, `_`→space) for any IANA city not
+    //    in the curated table.
     tzdb_match(&up).map(|(name, tz)| (name, Source::Zone(tz)))
 }
 
@@ -119,11 +96,46 @@ fn parse_offset(s: &str) -> Option<i32> {
 mod tests {
     use super::*;
 
+    fn zone_of(src: &Source) -> Option<String> {
+        match src {
+            Source::Zone(tz) => tz.iana_name().map(|s| s.to_string()),
+            Source::Fixed(_) => None,
+        }
+    }
+
     #[test]
     fn curated_hit() {
         let (name, src) = resolve("tok").unwrap();
         assert_eq!(name, "TOKYO");
         assert!(matches!(src, Source::Zone(_)));
+    }
+
+    #[test]
+    fn major_cities_without_own_zone() {
+        // Cities that have no IANA zone of their own must still resolve.
+        for (query, name, zone) in [
+            ("atlanta", "ATLANTA", "America/New_York"),
+            ("boston", "BOSTON", "America/New_York"),
+            ("seattle", "SEATTLE", "America/Los_Angeles"),
+            ("dallas", "DALLAS", "America/Chicago"),
+            ("miami", "MIAMI", "America/New_York"),
+            ("toronto", "TORONTO", "America/Toronto"),
+            ("mumbai", "MUMBAI", "Asia/Kolkata"),
+            ("cape town", "CAPE TOWN", "Africa/Johannesburg"),
+            ("melbourne", "MELBOURNE", "Australia/Melbourne"),
+        ] {
+            let (got_name, src) = resolve(query).unwrap_or_else(|| panic!("{query} unresolved"));
+            assert_eq!(got_name, name, "name for {query}");
+            assert_eq!(zone_of(&src).as_deref(), Some(zone), "zone for {query}");
+        }
+    }
+
+    #[test]
+    fn exact_beats_substring() {
+        // "paris" is exact even though other names contain the substring.
+        assert_eq!(resolve("paris").unwrap().0, "PARIS");
+        // "york" only appears inside NEW YORK.
+        assert_eq!(resolve("york").unwrap().0, "NEW YORK");
     }
 
     #[test]

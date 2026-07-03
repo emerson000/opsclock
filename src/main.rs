@@ -1,5 +1,6 @@
 mod app;
 mod cities;
+mod citydb;
 mod cli;
 mod config;
 mod led;
