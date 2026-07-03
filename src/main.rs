@@ -103,10 +103,8 @@ fn run(terminal: &mut Term, app: &mut App) -> color_eyre::Result<()> {
         // Poll at ~100ms so the display refreshes ≥5 Hz for blink/tick.
         if event::poll(Duration::from_millis(100))? {
             if let Event::Key(key) = event::read()? {
-                if key.kind == KeyEventKind::Press {
-                    if app.on_key(key) == Flow::Quit {
-                        return Ok(());
-                    }
+                if key.kind == KeyEventKind::Press && app.on_key(key) == Flow::Quit {
+                    return Ok(());
                 }
             }
         }

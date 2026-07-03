@@ -153,11 +153,9 @@ impl App {
                 buffer.pop();
                 *error = None;
             }
-            KeyCode::Char(c) => {
-                if buffer.chars().count() < 32 {
-                    buffer.push(c);
-                    *error = None;
-                }
+            KeyCode::Char(c) if buffer.chars().count() < 32 => {
+                buffer.push(c);
+                *error = None;
             }
             _ => {}
         }

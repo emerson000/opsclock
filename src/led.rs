@@ -36,13 +36,7 @@ pub fn led_art(text: &str, ghost: bool) -> Vec<String> {
             let g = glyph(c);
             let row = g[r];
             for cell in row.chars() {
-                if ghost {
-                    line.push('█');
-                } else if cell == '1' {
-                    line.push('█');
-                } else {
-                    line.push(' ');
-                }
+                line.push(if ghost || cell == '1' { '█' } else { ' ' });
             }
             if ci < chars.len() - 1 {
                 line.push(' ');
