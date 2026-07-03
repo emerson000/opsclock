@@ -28,12 +28,29 @@ pub enum LabelMode {
     Mil,
 }
 
+/// How a clock's time is drawn in the body area.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ClockStyle {
+    /// Single-line terminal text (small, crisp).
+    Plain,
+    /// Dot-matrix with the dim off-segment "ghost" backing layer.
+    Led,
+    /// Large block numerals — lit segments only, no ghost backing.
+    Clean,
+}
+
+/// Per-clock dot size (cells per lit dot) bounds for [`Clock::adjust_size`].
+pub const MIN_SIZE: u8 = 1;
+pub const MAX_SIZE: u8 = 6;
+pub const DEFAULT_SIZE: u8 = 3;
+
 /// One clock in the ordered list. Exactly one clock is always selected by `App`.
 pub enum Clock {
     Tz {
         name: String,
         source: Source,
-        led: bool,
+        style: ClockStyle,
+        size: u8,
     },
     Timer {
         name: String,
@@ -41,7 +58,8 @@ pub enum Clock {
         elapsed_ms: i64,
         running: bool,
         last_start: Timestamp,
-        led: bool,
+        style: ClockStyle,
+        size: u8,
         /// Set once we've fired the desktop notification for this run.
         notified: bool,
     },
@@ -50,13 +68,15 @@ pub enum Clock {
         elapsed_ms: i64,
         running: bool,
         last_start: Timestamp,
-        led: bool,
+        style: ClockStyle,
+        size: u8,
     },
     /// Counts down to a fixed absolute instant (a date/time), then holds at zero.
     Countdown {
         name: String,
         target: Timestamp,
-        led: bool,
+        style: ClockStyle,
+        size: u8,
         notified: bool,
     },
 }
@@ -76,22 +96,56 @@ impl Clock {
         }
     }
 
-    pub fn led(&self) -> bool {
+    pub fn style(&self) -> ClockStyle {
         match self {
-            Clock::Tz { led, .. }
-            | Clock::Timer { led, .. }
-            | Clock::Stopwatch { led, .. }
-            | Clock::Countdown { led, .. } => *led,
+            Clock::Tz { style, .. }
+            | Clock::Timer { style, .. }
+            | Clock::Stopwatch { style, .. }
+            | Clock::Countdown { style, .. } => *style,
         }
     }
 
-    pub fn set_led(&mut self, v: bool) {
+    pub fn set_style(&mut self, v: ClockStyle) {
         match self {
-            Clock::Tz { led, .. }
-            | Clock::Timer { led, .. }
-            | Clock::Stopwatch { led, .. }
-            | Clock::Countdown { led, .. } => *led = v,
+            Clock::Tz { style, .. }
+            | Clock::Timer { style, .. }
+            | Clock::Stopwatch { style, .. }
+            | Clock::Countdown { style, .. } => *style = v,
         }
+    }
+
+    /// Cycle through display styles: plain → LED → clean → plain.
+    pub fn cycle_style(&mut self) {
+        let next = match self.style() {
+            ClockStyle::Plain => ClockStyle::Led,
+            ClockStyle::Led => ClockStyle::Clean,
+            ClockStyle::Clean => ClockStyle::Plain,
+        };
+        self.set_style(next);
+    }
+
+    pub fn size(&self) -> u8 {
+        match self {
+            Clock::Tz { size, .. }
+            | Clock::Timer { size, .. }
+            | Clock::Stopwatch { size, .. }
+            | Clock::Countdown { size, .. } => *size,
+        }
+    }
+
+    fn set_size(&mut self, v: u8) {
+        match self {
+            Clock::Tz { size, .. }
+            | Clock::Timer { size, .. }
+            | Clock::Stopwatch { size, .. }
+            | Clock::Countdown { size, .. } => *size = v,
+        }
+    }
+
+    /// Grow/shrink the dot size by `delta`, clamped to [`MIN_SIZE`], [`MAX_SIZE`].
+    pub fn adjust_size(&mut self, delta: i8) {
+        let next = (self.size() as i16 + delta as i16).clamp(MIN_SIZE as i16, MAX_SIZE as i16);
+        self.set_size(next as u8);
     }
 
     pub fn is_tz(&self) -> bool {
@@ -241,7 +295,8 @@ mod tests {
             elapsed_ms: 0,
             running: true,
             last_start: t(0),
-            led: true,
+            style: ClockStyle::Led,
+            size: DEFAULT_SIZE,
             notified: false,
         }
     }
@@ -267,13 +322,40 @@ mod tests {
     }
 
     #[test]
+    fn style_cycles() {
+        let mut c = timer();
+        c.set_style(ClockStyle::Plain);
+        c.cycle_style();
+        assert_eq!(c.style(), ClockStyle::Led);
+        c.cycle_style();
+        assert_eq!(c.style(), ClockStyle::Clean);
+        c.cycle_style();
+        assert_eq!(c.style(), ClockStyle::Plain);
+    }
+
+    #[test]
+    fn size_clamps() {
+        let mut c = timer();
+        assert_eq!(c.size(), DEFAULT_SIZE);
+        for _ in 0..10 {
+            c.adjust_size(1);
+        }
+        assert_eq!(c.size(), MAX_SIZE);
+        for _ in 0..10 {
+            c.adjust_size(-1);
+        }
+        assert_eq!(c.size(), MIN_SIZE);
+    }
+
+    #[test]
     fn stopwatch_reset() {
         let mut c = Clock::Stopwatch {
             name: "S".into(),
             elapsed_ms: 0,
             running: true,
             last_start: t(0),
-            led: true,
+            style: ClockStyle::Led,
+            size: DEFAULT_SIZE,
         };
         assert_eq!(c.current_ms(t(30_000)), 30_000);
         c.on_reset(t(30_000));

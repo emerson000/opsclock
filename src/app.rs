@@ -1,7 +1,7 @@
 //! Application state and the keymap dispatcher (mirrors the prototype's `onKey`).
 
 use crate::config::Config;
-use crate::model::{Clock, LabelMode, Layout};
+use crate::model::{Clock, ClockStyle, LabelMode, Layout, DEFAULT_SIZE};
 use crate::ntp::{self, SyncState};
 use crate::time;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -110,6 +110,31 @@ impl App {
         self.clocks.len()
     }
 
+    /// Initial display style for a newly-added clock.
+    pub fn default_style(&self) -> ClockStyle {
+        if self.led_default {
+            ClockStyle::Led
+        } else {
+            ClockStyle::Plain
+        }
+    }
+
+    /// Reorder: move the selected clock by `delta` (±1), carrying the selection.
+    /// Clamps at the ends — reordering does not wrap.
+    fn move_sel(&mut self, delta: i64) {
+        let n = self.n();
+        if n < 2 {
+            return;
+        }
+        let target = self.sel as i64 + delta;
+        if target < 0 || target >= n as i64 {
+            return;
+        }
+        let target = target as usize;
+        self.clocks.swap(self.sel, target);
+        self.sel = target;
+    }
+
     /// Count existing clocks of a kind, for auto-naming (TIMER / TIMER 2 …).
     fn kind_name(&self, base: &str, is_timer: bool) -> String {
         let count = self
@@ -193,7 +218,11 @@ impl App {
     fn on_key_normal(&mut self, key: KeyEvent) -> Flow {
         let now = self.now();
         let n = self.n();
+        let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
         match key.code {
+            // Ctrl+arrows reorder the selected clock instead of moving the cursor.
+            KeyCode::Right | KeyCode::Down if ctrl => self.move_sel(1),
+            KeyCode::Left | KeyCode::Up if ctrl => self.move_sel(-1),
             KeyCode::Right | KeyCode::Tab | KeyCode::Down => self.sel = (self.sel + 1) % n,
             KeyCode::Left | KeyCode::Up | KeyCode::BackTab => self.sel = (self.sel + n - 1) % n,
             KeyCode::Esc => {
@@ -217,10 +246,9 @@ impl App {
             '2' => self.layout = Layout::Split,
             '3' => self.layout = Layout::Sidebar,
             '4' => self.layout = Layout::Wall,
-            'l' => {
-                let v = !self.clocks[self.sel].led();
-                self.clocks[self.sel].set_led(v);
-            }
+            'l' => self.clocks[self.sel].cycle_style(),
+            '+' | '=' => self.clocks[self.sel].adjust_size(1),
+            '-' | '_' => self.clocks[self.sel].adjust_size(-1),
             'o' => {
                 self.label_mode = match self.label_mode {
                     LabelMode::City => LabelMode::Mil,
@@ -251,7 +279,8 @@ impl App {
                     elapsed_ms: 0,
                     running: true,
                     last_start: now,
-                    led: self.led_default,
+                    style: self.default_style(),
+                    size: DEFAULT_SIZE,
                 });
                 self.sel = self.clocks.len() - 1;
             }
@@ -312,7 +341,8 @@ impl App {
                     elapsed_ms: 0,
                     running: true,
                     last_start: self.now(),
-                    led: self.led_default,
+                    style: self.default_style(),
+                    size: DEFAULT_SIZE,
                     notified: false,
                 });
                 self.sel = self.clocks.len() - 1;
@@ -327,7 +357,8 @@ impl App {
             self.clocks.push(Clock::Countdown {
                 name,
                 target,
-                led: self.led_default,
+                style: self.default_style(),
+                size: DEFAULT_SIZE,
                 notified: false,
             });
             self.sel = self.clocks.len() - 1;
@@ -356,7 +387,8 @@ impl App {
                 self.clocks.push(Clock::Tz {
                     name,
                     source,
-                    led: self.led_default,
+                    style: self.default_style(),
+                    size: DEFAULT_SIZE,
                 });
                 self.sel = self.clocks.len() - 1;
                 self.mode = Mode::Normal;
@@ -512,6 +544,63 @@ mod tests {
     }
     fn key(code: KeyCode) -> KeyEvent {
         KeyEvent::new(code, KeyModifiers::NONE)
+    }
+    fn ctrl(code: KeyCode) -> KeyEvent {
+        KeyEvent::new(code, KeyModifiers::CONTROL)
+    }
+
+    #[test]
+    fn style_key_cycles() {
+        let mut a = app4();
+        a.sel = 0;
+        let start = a.clocks[0].style();
+        a.on_key(press('l'));
+        assert_ne!(a.clocks[0].style(), start);
+        // Three presses return to the starting style.
+        a.on_key(press('l'));
+        a.on_key(press('l'));
+        assert_eq!(a.clocks[0].style(), start);
+    }
+
+    #[test]
+    fn size_keys_clamp() {
+        let mut a = app4();
+        a.sel = 0;
+        for _ in 0..10 {
+            a.on_key(press('+'));
+        }
+        assert_eq!(a.clocks[0].size(), crate::model::MAX_SIZE);
+        for _ in 0..10 {
+            a.on_key(press('-'));
+        }
+        assert_eq!(a.clocks[0].size(), crate::model::MIN_SIZE);
+    }
+
+    #[test]
+    fn ctrl_arrows_reorder() {
+        let mut a = app4();
+        a.sel = 0;
+        let first = a.clocks[0].name().to_string();
+        let second = a.clocks[1].name().to_string();
+        a.on_key(ctrl(KeyCode::Right));
+        // The selected clock swapped forward and the selection followed it.
+        assert_eq!(a.sel, 1);
+        assert_eq!(a.clocks[0].name(), second);
+        assert_eq!(a.clocks[1].name(), first);
+        // Plain arrows still move the cursor, not the clocks.
+        a.on_key(key(KeyCode::Left));
+        assert_eq!(a.sel, 0);
+        assert_eq!(a.clocks[0].name(), second);
+    }
+
+    #[test]
+    fn reorder_clamps_at_start() {
+        let mut a = app4();
+        a.sel = 0;
+        let first = a.clocks[0].name().to_string();
+        a.on_key(ctrl(KeyCode::Left));
+        assert_eq!(a.sel, 0);
+        assert_eq!(a.clocks[0].name(), first);
     }
 
     #[test]

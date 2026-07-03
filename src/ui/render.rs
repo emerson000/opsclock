@@ -3,7 +3,7 @@
 
 use crate::app::{App, InputKind, Mode, NTP_SERVERS};
 use crate::led::glyph;
-use crate::model::{Clock, LabelMode, Layout as L, Source};
+use crate::model::{Clock, ClockStyle, LabelMode, Layout as L, Source};
 use crate::ntp::SyncState;
 use crate::time::{self, Wall};
 use crate::ui::layouts;
@@ -27,7 +27,9 @@ struct View {
     /// True during the blink's dark phase (only meaningful when `expired`).
     blink_off: bool,
     selected: bool,
-    led: bool,
+    style: ClockStyle,
+    /// Dot size (cells per lit dot) for LED/clean rendering.
+    size: u8,
 }
 
 pub fn draw(f: &mut Frame, app: &App) {
@@ -249,7 +251,9 @@ fn draw_input(f: &mut Frame, area: Rect, app: &App) {
 const KEYHINTS: &[(&str, &str)] = &[
     ("←→", "SELECT"),
     ("1-4", "LAYOUT"),
-    ("l", "LED"),
+    ("^←→", "MOVE"),
+    ("l", "STYLE"),
+    ("+/-", "SIZE"),
     ("t", "SET TIME"),
     ("T", "TIMER"),
     ("s", "STOPWATCH"),
@@ -416,7 +420,8 @@ fn build_view(app: &App, i: usize, disp: jiff::Timestamp, now: jiff::Timestamp, 
         expired,
         blink_off: !app.blink,
         selected,
-        led: clock.led(),
+        style: clock.style(),
+        size: clock.size(),
     }
 }
 
@@ -433,7 +438,7 @@ fn draw_tile(f: &mut Frame, area: Rect, v: &View, zen: bool) {
     // Zen: no border, name, or footer — the time fills the whole cell.
     if zen {
         if area.width >= 2 && area.height >= 1 {
-            draw_body(f, area, v, false);
+            draw_body(f, area, v);
         }
         return;
     }
@@ -460,7 +465,7 @@ fn draw_tile(f: &mut Frame, area: Rect, v: &View, zen: bool) {
     let (head, body, foot) = (parts[0], parts[1], parts[2]);
 
     draw_tile_header(f, head, v);
-    draw_body(f, body, v, false);
+    draw_body(f, body, v);
     draw_tile_footer(f, foot, v);
 }
 
@@ -510,40 +515,52 @@ fn draw_tile_footer(f: &mut Frame, area: Rect, v: &View) {
     );
 }
 
-/// Body: LED dot-matrix art, or large plain text, centered.
-fn draw_body(f: &mut Frame, area: Rect, v: &View, wall: bool) {
+/// Body: dot-matrix art (LED or clean), or plain single-line text, centered.
+/// Size is per-clock; [`crate::led::dot_fit`] still clamps it to what fits.
+fn draw_body(f: &mut Frame, area: Rect, v: &View) {
     let dim = v.expired && v.blink_off;
     let color = if dim { c::DIMMEST } else { c::LED };
-    if v.led {
-        let n_glyphs = v.time_text.chars().count();
-        let max_dots = if wall { 4 } else { 3 };
-        let dots = crate::led::dot_fit(n_glyphs, area.width, area.height).min(max_dots);
-        let lines = build_art(&v.time_text, dots, color, c::GHOST);
-        let art_h = lines.len() as u16;
-        let vpad = area.height.saturating_sub(art_h) / 2;
-        let mut all: Vec<Line> = Vec::new();
-        for _ in 0..vpad {
-            all.push(Line::from(""));
+    // Off-cell backing: ghost blocks for LED, nothing for the clean style.
+    let off = match v.style {
+        ClockStyle::Led => Some(c::GHOST),
+        ClockStyle::Clean => None,
+        ClockStyle::Plain => {
+            let vpad = area.height.saturating_sub(1) / 2;
+            let mut all: Vec<Line> = Vec::new();
+            for _ in 0..vpad {
+                all.push(Line::from(""));
+            }
+            all.push(Line::from(Span::styled(
+                v.time_text.clone(),
+                Style::default().fg(color).add_modifier(Modifier::BOLD),
+            )));
+            f.render_widget(Paragraph::new(all).alignment(Alignment::Center), area);
+            return;
         }
-        all.extend(lines);
-        f.render_widget(Paragraph::new(all).alignment(Alignment::Center), area);
-    } else {
-        let vpad = area.height.saturating_sub(1) / 2;
-        let mut all: Vec<Line> = Vec::new();
-        for _ in 0..vpad {
-            all.push(Line::from(""));
-        }
-        all.push(Line::from(Span::styled(
-            v.time_text.clone(),
-            Style::default().fg(color).add_modifier(Modifier::BOLD),
-        )));
-        f.render_widget(Paragraph::new(all).alignment(Alignment::Center), area);
+    };
+    let n_glyphs = v.time_text.chars().count();
+    let dots = crate::led::dot_fit(n_glyphs, area.width, area.height).min(v.size as usize);
+    let lines = build_art(&v.time_text, dots, color, off);
+    let art_h = lines.len() as u16;
+    let vpad = area.height.saturating_sub(art_h) / 2;
+    let mut all: Vec<Line> = Vec::new();
+    for _ in 0..vpad {
+        all.push(Line::from(""));
     }
+    all.extend(lines);
+    f.render_widget(Paragraph::new(all).alignment(Alignment::Center), area);
 }
 
-/// Build dot-matrix lines: every dot is a colored block cell (lit or ghost);
-/// inter-glyph gaps are spaces. `dots` scales each cell to a dots×dots square.
-fn build_art(text: &str, dots: usize, lit: ratatui::style::Color, ghost: ratatui::style::Color) -> Vec<Line<'static>> {
+/// Build dot-matrix lines: every lit dot is a colored block cell; off cells are
+/// drawn in `off` (the dim ghost backing) when `Some`, or left blank when `None`
+/// (the clean style). Inter-glyph gaps are spaces. `dots` scales each cell to a
+/// dots×dots square.
+fn build_art(
+    text: &str,
+    dots: usize,
+    lit: ratatui::style::Color,
+    off: Option<ratatui::style::Color>,
+) -> Vec<Line<'static>> {
     #[derive(Clone, Copy)]
     enum Cell {
         Lit,
@@ -568,7 +585,10 @@ fn build_art(text: &str, dots: usize, lit: ratatui::style::Color, ghost: ratatui
         for cell in &cells {
             let (ch, style) = match cell {
                 Cell::Lit => ('█', Style::default().fg(lit)),
-                Cell::Off => ('█', Style::default().fg(ghost)),
+                Cell::Off => match off {
+                    Some(g) => ('█', Style::default().fg(g)),
+                    None => (' ', Style::default()),
+                },
                 Cell::Gap => (' ', Style::default()),
             };
             spans.push(Span::styled(ch.to_string().repeat(dots), style));
@@ -621,7 +641,7 @@ fn draw_sidebar_row(f: &mut Frame, area: Rect, v: &View, zen: bool) {
 fn draw_wall(f: &mut Frame, area: Rect, v: &View, zen: bool) {
     // Zen: just the giant time, no header or footer.
     if zen {
-        draw_body(f, area, v, true);
+        draw_body(f, area, v);
         return;
     }
     let parts = Layout::default()
@@ -642,7 +662,7 @@ fn draw_wall(f: &mut Frame, area: Rect, v: &View, zen: bool) {
             .alignment(Alignment::Right),
         parts[0],
     );
-    draw_body(f, parts[1], v, true);
+    draw_body(f, parts[1], v);
     draw_tile_footer(f, parts[2], v);
 }
 
@@ -662,16 +682,18 @@ fn centered(area: Rect, w: u16, h: u16) -> Rect {
 const HELP_ROWS: &[(&str, &str)] = &[
     ("← → TAB", "select clock"),
     ("t", "set time on clock — converts all (e.g. 17:00 tomorrow)"),
-    ("1", "grid layout (workstation)"),
+    ("CTRL+← →", "move clock position (reorder)"),
     ("T", "new countdown timer (20m, 1h30m, 00:20:00)"),
-    ("2", "split layout (tmux panes)"),
+    ("1", "grid layout (workstation)"),
     ("s", "new stopwatch (counts up)"),
-    ("3", "sidebar layout (compact)"),
+    ("2", "split layout (tmux panes)"),
     ("SPACE", "run / pause selected timer"),
-    ("4", "wall layout (giant clock)"),
+    ("3", "sidebar layout (compact)"),
     ("r", "reset / restart selected timer"),
-    ("l", "toggle LED matrix style on clock"),
+    ("4", "wall layout (giant clock)"),
     ("a", "add clock (city or UTC+5:30)"),
+    ("l", "cycle style: plain → LED → clean"),
+    ("+ -", "clock size (LED / clean styles)"),
     ("o", "labels: city ↔ military zone"),
     ("x", "close selected clock"),
     ("n", "time server sync"),

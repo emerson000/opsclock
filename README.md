@@ -2,8 +2,9 @@
 
 A mission-control-style terminal world-clock TUI: multiple world clocks (by city
 or UTC offset), NASA-style countdown timers and stopwatches, point-in-time
-conversion across every clock, four layouts, a red LED dot-matrix display mode,
-and real NTP server sync. Keyboard-first — every binding is a single key.
+conversion across every clock, four layouts, three resizable display styles
+(plain, LED dot-matrix, and clean block), and real NTP server sync.
+Keyboard-first — every binding is a single key.
 
 Built with [ratatui](https://ratatui.rs) + crossterm, [jiff](https://docs.rs/jiff)
 (bundled tz database, so it works on musl/Windows without system tzdata), clap,
@@ -45,8 +46,10 @@ CLI values augment/override the loaded config at startup.
 | Key | Action |
 |-----|--------|
 | `← → Tab` (also `↑ ↓`) | select clock |
+| `Ctrl+← →` (also `Ctrl+↑ ↓`) | move the selected clock's position (reorder) |
 | `1` `2` `3` `4` | grid / split / sidebar / wall layout |
-| `l` | toggle LED matrix on the selected clock |
+| `l` | cycle display style on the selected clock: plain → LED → clean |
+| `+` `-` | grow / shrink the selected clock (LED & clean styles; 1–6) |
 | `t` | set time on the selected zone clock — converts **all** clocks (e.g. `17:00 tomorrow`) |
 | `T` | new timer — a duration (`20m`, `1h30m`, `00:20:00`) **or** a target date/time (`tomorrow at 12pm`, `friday 3pm`, `dec 25`) |
 | `s` | new stopwatch (instant, counts up) |
