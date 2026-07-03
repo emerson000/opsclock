@@ -1,0 +1,23 @@
+[package]
+name = "opsclock"
+version = "0.1.0"
+edition = "2021"
+description = "Mission-control-style terminal world-clock TUI"
+
+[features]
+default = ["notify"]
+notify = ["dep:notify-rust"]
+
+[dependencies]
+ratatui = "0.29"
+crossterm = "0.28"
+jiff = { version = "0.2", features = ["tzdb-bundle-always"] }
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+color-eyre = "0.6"
+dirs = "5"
+notify-rust = { version = "4", optional = true }
+
+[profile.release]
+lto = true
