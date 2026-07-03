@@ -1,6 +1,7 @@
 //! Core domain entities: clocks, layouts, and the timer/stopwatch state machine.
 
 use jiff::{tz::TimeZone, Timestamp};
+use serde::{Deserialize, Serialize};
 
 /// Where a timezone clock gets its wall time from.
 #[derive(Clone)]
@@ -11,7 +12,8 @@ pub enum Source {
     Fixed(i32),
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Layout {
     Grid,
     Split,
@@ -19,7 +21,8 @@ pub enum Layout {
     Wall,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum LabelMode {
     City,
     Mil,
