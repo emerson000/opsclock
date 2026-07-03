@@ -3,6 +3,15 @@ name = "opsclock"
 version = "0.1.0"
 edition = "2021"
 description = "Mission-control-style terminal world-clock TUI"
+authors = ["emerson000"]
+repository = "https://git.ribbon-stairs.ts.net/emerson/opsclock"
+readme = "README.md"
+keywords = ["clock", "tui", "terminal", "world-clock", "timezone"]
+categories = ["command-line-utilities"]
+
+[[bin]]
+name = "opsclock"
+path = "src/main.rs"
 
 [features]
 default = ["notify"]

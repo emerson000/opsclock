@@ -33,16 +33,15 @@ pub enum LabelMode {
 pub enum ClockStyle {
     /// Single-line terminal text (small, crisp).
     Plain,
-    /// Dot-matrix with the dim off-segment "ghost" backing layer.
-    Led,
-    /// Large block numerals — lit segments only, no ghost backing.
+    /// Large block numerals (the "clean LED").
     Clean,
 }
 
-/// Per-clock dot size (cells per lit dot) bounds for [`Clock::adjust_size`].
-pub const MIN_SIZE: u8 = 1;
-pub const MAX_SIZE: u8 = 6;
-pub const DEFAULT_SIZE: u8 = 3;
+/// Per-clock dot-size scale, applied as an offset to the auto-fit size, so `0`
+/// renders at each layout's natural fit and `±` grows/shrinks from there.
+pub const SCALE_MIN: i8 = -10;
+pub const SCALE_MAX: i8 = 10;
+pub const DEFAULT_SCALE: i8 = 0;
 
 /// One clock in the ordered list. Exactly one clock is always selected by `App`.
 pub enum Clock {
@@ -50,7 +49,7 @@ pub enum Clock {
         name: String,
         source: Source,
         style: ClockStyle,
-        size: u8,
+        scale: i8,
     },
     Timer {
         name: String,
@@ -59,7 +58,7 @@ pub enum Clock {
         running: bool,
         last_start: Timestamp,
         style: ClockStyle,
-        size: u8,
+        scale: i8,
         /// Set once we've fired the desktop notification for this run.
         notified: bool,
     },
@@ -69,14 +68,14 @@ pub enum Clock {
         running: bool,
         last_start: Timestamp,
         style: ClockStyle,
-        size: u8,
+        scale: i8,
     },
     /// Counts down to a fixed absolute instant (a date/time), then holds at zero.
     Countdown {
         name: String,
         target: Timestamp,
         style: ClockStyle,
-        size: u8,
+        scale: i8,
         notified: bool,
     },
 }
@@ -114,38 +113,43 @@ impl Clock {
         }
     }
 
-    /// Cycle through display styles: plain → LED → clean → plain.
-    pub fn cycle_style(&mut self) {
+    /// Toggle the display style between plain single-line and the clean LED.
+    pub fn toggle_style(&mut self) {
         let next = match self.style() {
-            ClockStyle::Plain => ClockStyle::Led,
-            ClockStyle::Led => ClockStyle::Clean,
+            ClockStyle::Plain => ClockStyle::Clean,
             ClockStyle::Clean => ClockStyle::Plain,
         };
         self.set_style(next);
     }
 
-    pub fn size(&self) -> u8 {
+    pub fn scale(&self) -> i8 {
         match self {
-            Clock::Tz { size, .. }
-            | Clock::Timer { size, .. }
-            | Clock::Stopwatch { size, .. }
-            | Clock::Countdown { size, .. } => *size,
+            Clock::Tz { scale, .. }
+            | Clock::Timer { scale, .. }
+            | Clock::Stopwatch { scale, .. }
+            | Clock::Countdown { scale, .. } => *scale,
         }
     }
 
-    fn set_size(&mut self, v: u8) {
+    fn set_scale(&mut self, v: i8) {
         match self {
-            Clock::Tz { size, .. }
-            | Clock::Timer { size, .. }
-            | Clock::Stopwatch { size, .. }
-            | Clock::Countdown { size, .. } => *size = v,
+            Clock::Tz { scale, .. }
+            | Clock::Timer { scale, .. }
+            | Clock::Stopwatch { scale, .. }
+            | Clock::Countdown { scale, .. } => *scale = v,
         }
     }
 
-    /// Grow/shrink the dot size by `delta`, clamped to [`MIN_SIZE`], [`MAX_SIZE`].
-    pub fn adjust_size(&mut self, delta: i8) {
-        let next = (self.size() as i16 + delta as i16).clamp(MIN_SIZE as i16, MAX_SIZE as i16);
-        self.set_size(next as u8);
+    /// Grow/shrink the dot scale by `delta`, clamped to [`SCALE_MIN`], [`SCALE_MAX`].
+    pub fn adjust_scale(&mut self, delta: i8) {
+        let next = (self.scale() as i16 + delta as i16)
+            .clamp(SCALE_MIN as i16, SCALE_MAX as i16);
+        self.set_scale(next as i8);
+    }
+
+    /// Reset the dot scale to the auto-fit default (0).
+    pub fn reset_scale(&mut self) {
+        self.set_scale(DEFAULT_SCALE);
     }
 
     pub fn is_tz(&self) -> bool {
@@ -295,8 +299,8 @@ mod tests {
             elapsed_ms: 0,
             running: true,
             last_start: t(0),
-            style: ClockStyle::Led,
-            size: DEFAULT_SIZE,
+            style: ClockStyle::Clean,
+            scale: DEFAULT_SCALE,
             notified: false,
         }
     }
@@ -322,29 +326,29 @@ mod tests {
     }
 
     #[test]
-    fn style_cycles() {
+    fn style_toggles() {
         let mut c = timer();
         c.set_style(ClockStyle::Plain);
-        c.cycle_style();
-        assert_eq!(c.style(), ClockStyle::Led);
-        c.cycle_style();
+        c.toggle_style();
         assert_eq!(c.style(), ClockStyle::Clean);
-        c.cycle_style();
+        c.toggle_style();
         assert_eq!(c.style(), ClockStyle::Plain);
     }
 
     #[test]
-    fn size_clamps() {
+    fn scale_clamps_and_resets() {
         let mut c = timer();
-        assert_eq!(c.size(), DEFAULT_SIZE);
-        for _ in 0..10 {
-            c.adjust_size(1);
+        assert_eq!(c.scale(), DEFAULT_SCALE);
+        for _ in 0..20 {
+            c.adjust_scale(1);
         }
-        assert_eq!(c.size(), MAX_SIZE);
-        for _ in 0..10 {
-            c.adjust_size(-1);
+        assert_eq!(c.scale(), SCALE_MAX);
+        for _ in 0..40 {
+            c.adjust_scale(-1);
         }
-        assert_eq!(c.size(), MIN_SIZE);
+        assert_eq!(c.scale(), SCALE_MIN);
+        c.reset_scale();
+        assert_eq!(c.scale(), DEFAULT_SCALE);
     }
 
     #[test]
@@ -354,8 +358,8 @@ mod tests {
             elapsed_ms: 0,
             running: true,
             last_start: t(0),
-            style: ClockStyle::Led,
-            size: DEFAULT_SIZE,
+            style: ClockStyle::Clean,
+            scale: DEFAULT_SCALE,
         };
         assert_eq!(c.current_ms(t(30_000)), 30_000);
         c.on_reset(t(30_000));

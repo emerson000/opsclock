@@ -2,13 +2,30 @@
 
 A mission-control-style terminal world-clock TUI: multiple world clocks (by city
 or UTC offset), NASA-style countdown timers and stopwatches, point-in-time
-conversion across every clock, four layouts, three resizable display styles
-(plain, LED dot-matrix, and clean block), and real NTP server sync.
+conversion across every clock, four layouts, two resizable display styles
+(a plain line and a large "clean LED" block face), and real NTP server sync.
 Keyboard-first — every binding is a single key.
 
 Built with [ratatui](https://ratatui.rs) + crossterm, [jiff](https://docs.rs/jiff)
 (bundled tz database, so it works on musl/Windows without system tzdata), clap,
 serde/toml, and color-eyre.
+
+## Install
+
+Install the `opsclock` binary to `~/.cargo/bin` (make sure that's on your `PATH`):
+
+```sh
+# from a local checkout
+cargo install --path .
+
+# straight from the repository
+cargo install --git https://git.ribbon-stairs.ts.net/emerson/opsclock
+
+# pure-terminal build with no desktop-notification dependency
+cargo install --path . --no-default-features
+```
+
+Then just run `opsclock`. To update, re-run the same command with `--force`.
 
 ## Build & run
 
@@ -48,8 +65,8 @@ CLI values augment/override the loaded config at startup.
 | `← → Tab` (also `↑ ↓`) | select clock |
 | `Ctrl+← →` (also `Ctrl+↑ ↓`) | move the selected clock's position (reorder) |
 | `1` `2` `3` `4` | grid / split / sidebar / wall layout |
-| `l` | cycle display style on the selected clock: plain → LED → clean |
-| `+` `-` | grow / shrink the selected clock (LED & clean styles; 1–6) |
+| `l` | toggle display style on the selected clock: plain line ↔ clean LED |
+| `+` `-` `0` | grow / shrink / reset the selected clock's size (all layouts) |
 | `t` | set time on the selected zone clock — converts **all** clocks (e.g. `17:00 tomorrow`) |
 | `T` | new timer — a duration (`20m`, `1h30m`, `00:20:00`) **or** a target date/time (`tomorrow at 12pm`, `friday 3pm`, `dec 25`) |
 | `s` | new stopwatch (instant, counts up) |

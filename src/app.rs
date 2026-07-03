@@ -1,7 +1,7 @@
 //! Application state and the keymap dispatcher (mirrors the prototype's `onKey`).
 
 use crate::config::Config;
-use crate::model::{Clock, ClockStyle, LabelMode, Layout, DEFAULT_SIZE};
+use crate::model::{Clock, ClockStyle, LabelMode, Layout, DEFAULT_SCALE};
 use crate::ntp::{self, SyncState};
 use crate::time;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -113,7 +113,7 @@ impl App {
     /// Initial display style for a newly-added clock.
     pub fn default_style(&self) -> ClockStyle {
         if self.led_default {
-            ClockStyle::Led
+            ClockStyle::Clean
         } else {
             ClockStyle::Plain
         }
@@ -246,9 +246,10 @@ impl App {
             '2' => self.layout = Layout::Split,
             '3' => self.layout = Layout::Sidebar,
             '4' => self.layout = Layout::Wall,
-            'l' => self.clocks[self.sel].cycle_style(),
-            '+' | '=' => self.clocks[self.sel].adjust_size(1),
-            '-' | '_' => self.clocks[self.sel].adjust_size(-1),
+            'l' => self.clocks[self.sel].toggle_style(),
+            '+' | '=' => self.clocks[self.sel].adjust_scale(1),
+            '-' | '_' => self.clocks[self.sel].adjust_scale(-1),
+            '0' => self.clocks[self.sel].reset_scale(),
             'o' => {
                 self.label_mode = match self.label_mode {
                     LabelMode::City => LabelMode::Mil,
@@ -280,7 +281,7 @@ impl App {
                     running: true,
                     last_start: now,
                     style: self.default_style(),
-                    size: DEFAULT_SIZE,
+                    scale: DEFAULT_SCALE,
                 });
                 self.sel = self.clocks.len() - 1;
             }
@@ -342,7 +343,7 @@ impl App {
                     running: true,
                     last_start: self.now(),
                     style: self.default_style(),
-                    size: DEFAULT_SIZE,
+                    scale: DEFAULT_SCALE,
                     notified: false,
                 });
                 self.sel = self.clocks.len() - 1;
@@ -358,7 +359,7 @@ impl App {
                 name,
                 target,
                 style: self.default_style(),
-                size: DEFAULT_SIZE,
+                scale: DEFAULT_SCALE,
                 notified: false,
             });
             self.sel = self.clocks.len() - 1;
@@ -388,7 +389,7 @@ impl App {
                     name,
                     source,
                     style: self.default_style(),
-                    size: DEFAULT_SIZE,
+                    scale: DEFAULT_SCALE,
                 });
                 self.sel = self.clocks.len() - 1;
                 self.mode = Mode::Normal;
@@ -550,30 +551,33 @@ mod tests {
     }
 
     #[test]
-    fn style_key_cycles() {
+    fn style_key_toggles() {
         let mut a = app4();
         a.sel = 0;
         let start = a.clocks[0].style();
         a.on_key(press('l'));
         assert_ne!(a.clocks[0].style(), start);
-        // Three presses return to the starting style.
-        a.on_key(press('l'));
+        // A second press returns to the starting style (binary toggle).
         a.on_key(press('l'));
         assert_eq!(a.clocks[0].style(), start);
     }
 
     #[test]
-    fn size_keys_clamp() {
+    fn scale_keys_clamp_and_reset() {
         let mut a = app4();
         a.sel = 0;
-        for _ in 0..10 {
+        for _ in 0..20 {
             a.on_key(press('+'));
         }
-        assert_eq!(a.clocks[0].size(), crate::model::MAX_SIZE);
-        for _ in 0..10 {
+        assert_eq!(a.clocks[0].scale(), crate::model::SCALE_MAX);
+        a.on_key(press('0'));
+        assert_eq!(a.clocks[0].scale(), 0);
+        for _ in 0..20 {
             a.on_key(press('-'));
         }
-        assert_eq!(a.clocks[0].size(), crate::model::MIN_SIZE);
+        assert_eq!(a.clocks[0].scale(), crate::model::SCALE_MIN);
+        a.on_key(press('0'));
+        assert_eq!(a.clocks[0].scale(), 0);
     }
 
     #[test]

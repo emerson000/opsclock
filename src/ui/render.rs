@@ -28,8 +28,8 @@ struct View {
     blink_off: bool,
     selected: bool,
     style: ClockStyle,
-    /// Dot size (cells per lit dot) for LED/clean rendering.
-    size: u8,
+    /// Dot-size offset added to the auto-fit size for the clean style.
+    scale: i8,
 }
 
 pub fn draw(f: &mut Frame, app: &App) {
@@ -253,7 +253,7 @@ const KEYHINTS: &[(&str, &str)] = &[
     ("1-4", "LAYOUT"),
     ("^←→", "MOVE"),
     ("l", "STYLE"),
-    ("+/-", "SIZE"),
+    ("+/-/0", "SIZE"),
     ("t", "SET TIME"),
     ("T", "TIMER"),
     ("s", "STOPWATCH"),
@@ -312,7 +312,7 @@ fn draw_main(f: &mut Frame, area: Rect, app: &App, disp: jiff::Timestamp, now: j
         L::Sidebar => {
             let (_, rows) = layouts::sidebar_rows(area, n);
             for (i, r) in rows.iter().enumerate() {
-                draw_sidebar_row(f, *r, &views[i], zen);
+                draw_sidebar_row(f, *r, &views[i]);
             }
         }
         L::Wall => {
@@ -421,7 +421,7 @@ fn build_view(app: &App, i: usize, disp: jiff::Timestamp, now: jiff::Timestamp, 
         blink_off: !app.blink,
         selected,
         style: clock.style(),
-        size: clock.size(),
+        scale: clock.scale(),
     }
 }
 
@@ -515,32 +515,29 @@ fn draw_tile_footer(f: &mut Frame, area: Rect, v: &View) {
     );
 }
 
-/// Body: dot-matrix art (LED or clean), or plain single-line text, centered.
-/// Size is per-clock; [`crate::led::dot_fit`] still clamps it to what fits.
+/// Body: the clean block art, or plain single-line text, centered. The per-clock
+/// `scale` is added to the auto-fit dot size, so `0` fits each layout naturally
+/// and `±` grows/shrinks from there (ratatui clips anything past the area).
 fn draw_body(f: &mut Frame, area: Rect, v: &View) {
     let dim = v.expired && v.blink_off;
     let color = if dim { c::DIMMEST } else { c::LED };
-    // Off-cell backing: ghost blocks for LED, nothing for the clean style.
-    let off = match v.style {
-        ClockStyle::Led => Some(c::GHOST),
-        ClockStyle::Clean => None,
-        ClockStyle::Plain => {
-            let vpad = area.height.saturating_sub(1) / 2;
-            let mut all: Vec<Line> = Vec::new();
-            for _ in 0..vpad {
-                all.push(Line::from(""));
-            }
-            all.push(Line::from(Span::styled(
-                v.time_text.clone(),
-                Style::default().fg(color).add_modifier(Modifier::BOLD),
-            )));
-            f.render_widget(Paragraph::new(all).alignment(Alignment::Center), area);
-            return;
+    if v.style == ClockStyle::Plain {
+        let vpad = area.height.saturating_sub(1) / 2;
+        let mut all: Vec<Line> = Vec::new();
+        for _ in 0..vpad {
+            all.push(Line::from(""));
         }
-    };
+        all.push(Line::from(Span::styled(
+            v.time_text.clone(),
+            Style::default().fg(color).add_modifier(Modifier::BOLD),
+        )));
+        f.render_widget(Paragraph::new(all).alignment(Alignment::Center), area);
+        return;
+    }
     let n_glyphs = v.time_text.chars().count();
-    let dots = crate::led::dot_fit(n_glyphs, area.width, area.height).min(v.size as usize);
-    let lines = build_art(&v.time_text, dots, color, off);
+    let fit = crate::led::dot_fit(n_glyphs, area.width, area.height) as i32;
+    let dots = (fit + v.scale as i32).max(1) as usize;
+    let lines = build_art(&v.time_text, dots, color);
     let art_h = lines.len() as u16;
     let vpad = area.height.saturating_sub(art_h) / 2;
     let mut all: Vec<Line> = Vec::new();
@@ -551,16 +548,9 @@ fn draw_body(f: &mut Frame, area: Rect, v: &View) {
     f.render_widget(Paragraph::new(all).alignment(Alignment::Center), area);
 }
 
-/// Build dot-matrix lines: every lit dot is a colored block cell; off cells are
-/// drawn in `off` (the dim ghost backing) when `Some`, or left blank when `None`
-/// (the clean style). Inter-glyph gaps are spaces. `dots` scales each cell to a
-/// dots×dots square.
-fn build_art(
-    text: &str,
-    dots: usize,
-    lit: ratatui::style::Color,
-    off: Option<ratatui::style::Color>,
-) -> Vec<Line<'static>> {
+/// Build the block-numeral art: every lit dot is a colored block cell; off cells
+/// and inter-glyph gaps are blank. `dots` scales each cell to a dots×dots square.
+fn build_art(text: &str, dots: usize, lit: ratatui::style::Color) -> Vec<Line<'static>> {
     #[derive(Clone, Copy)]
     enum Cell {
         Lit,
@@ -585,11 +575,7 @@ fn build_art(
         for cell in &cells {
             let (ch, style) = match cell {
                 Cell::Lit => ('█', Style::default().fg(lit)),
-                Cell::Off => match off {
-                    Some(g) => ('█', Style::default().fg(g)),
-                    None => (' ', Style::default()),
-                },
-                Cell::Gap => (' ', Style::default()),
+                Cell::Off | Cell::Gap => (' ', Style::default()),
             };
             spans.push(Span::styled(ch.to_string().repeat(dots), style));
         }
@@ -601,23 +587,14 @@ fn build_art(
     out
 }
 
-fn draw_sidebar_row(f: &mut Frame, area: Rect, v: &View, zen: bool) {
+// The sidebar row is compact enough to stand on its own, so zen mode keeps it
+// intact — label, UTC offset, and time all stay visible without the chrome.
+fn draw_sidebar_row(f: &mut Frame, area: Rect, v: &View) {
     let label_style = if v.selected {
         Style::default().fg(c::SEL_LABEL).add_modifier(Modifier::BOLD)
     } else {
         Style::default().fg(c::BODY)
     };
-    // Zen: only the time, left-aligned, no name or sub.
-    if zen {
-        f.render_widget(
-            Paragraph::new(Line::from(Span::styled(
-                v.time_text.clone(),
-                Style::default().fg(c::LED),
-            ))),
-            area,
-        );
-        return;
-    }
     let mark = if v.selected { "▸ " } else { "  " };
     f.render_widget(
         Paragraph::new(Line::from(vec![
@@ -692,8 +669,8 @@ const HELP_ROWS: &[(&str, &str)] = &[
     ("r", "reset / restart selected timer"),
     ("4", "wall layout (giant clock)"),
     ("a", "add clock (city or UTC+5:30)"),
-    ("l", "cycle style: plain → LED → clean"),
-    ("+ -", "clock size (LED / clean styles)"),
+    ("l", "toggle style: plain line ↔ clean LED"),
+    ("+ - 0", "clock size (grow / shrink / reset)"),
     ("o", "labels: city ↔ military zone"),
     ("x", "close selected clock"),
     ("n", "time server sync"),

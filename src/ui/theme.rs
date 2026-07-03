@@ -19,8 +19,6 @@ pub const PANEL_BG: Color = rgb(0x0c0404);
 
 /// LED lit / primary accent (bright red).
 pub const LED: Color = rgb(0xff3b2f);
-/// LED ghost / off-segment (dark red).
-pub const GHOST: Color = rgb(0x230a08);
 
 /// Selected clock label.
 pub const SEL_LABEL: Color = rgb(0xff6b5f);

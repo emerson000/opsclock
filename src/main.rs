@@ -15,7 +15,7 @@ use cli::Args;
 use config::Config;
 use crossterm::event::{self, Event, KeyEventKind};
 use crossterm::{execute, terminal};
-use model::{Clock, DEFAULT_SIZE};
+use model::{Clock, DEFAULT_SCALE};
 use std::io::{self, Stdout};
 use std::time::Duration;
 
@@ -46,7 +46,7 @@ fn apply_cli_overrides(app: &mut App, args: &Args) {
                 name,
                 source,
                 style: app.default_style(),
-                size: DEFAULT_SIZE,
+                scale: DEFAULT_SCALE,
             });
         } else {
             eprintln!("opsclock: unknown clock '{query}'");
@@ -68,7 +68,7 @@ fn apply_cli_overrides(app: &mut App, args: &Args) {
                     running: true,
                     last_start: app.now(),
                     style: app.default_style(),
-                    size: DEFAULT_SIZE,
+                    scale: DEFAULT_SCALE,
                     notified: false,
                 });
             }

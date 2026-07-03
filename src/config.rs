@@ -1,40 +1,35 @@
 //! TOML config: clock list, layout, label mode, NTP server, LED default.
 //! Load never fails hard — a broken file falls back to defaults.
 
-use crate::model::{Clock, ClockStyle, LabelMode, Layout, Source, DEFAULT_SIZE};
+use crate::model::{Clock, ClockStyle, LabelMode, Layout, Source};
 use jiff::Timestamp;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-fn default_size() -> u8 {
-    DEFAULT_SIZE
-}
-
-/// Map persisted (`led`, `clean`) flags to a runtime display style. `clean`
-/// wins so files written before the clean style still round-trip sensibly.
+/// Map persisted (`led`, `clean`) flags to a runtime display style. Either flag
+/// means the large "clean LED" style — `led` was the old dot-matrix toggle and
+/// now collapses onto clean, so pre-existing configs keep a large display.
 fn style_of(led: bool, clean: bool) -> ClockStyle {
-    if clean {
+    if led || clean {
         ClockStyle::Clean
-    } else if led {
-        ClockStyle::Led
     } else {
         ClockStyle::Plain
     }
 }
 
-/// Split a runtime style back into the persisted (`led`, `clean`) flags. `Clean`
-/// keeps `led = true` so older opsclock versions still render a large display.
+/// Split a runtime style back into the persisted (`led`, `clean`) flags. Both
+/// are written for `Clean` so older opsclock versions still render a display.
 fn flags_of(style: ClockStyle) -> (bool, bool) {
     match style {
         ClockStyle::Plain => (false, false),
-        ClockStyle::Led => (true, false),
         ClockStyle::Clean => (true, true),
     }
 }
 
 /// A clock as persisted to disk (jiff `TimeZone` isn't directly serializable).
-/// `led`/`clean`/`size` describe the display style; `clean` and `size` carry
-/// serde defaults so configs written before those fields still load.
+/// `led`/`clean` describe the display style and `scale` the dot-size offset;
+/// `clean` and `scale` carry serde defaults so configs written before those
+/// fields still load (and the removed `size` field is simply ignored).
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum ClockCfg {
@@ -47,8 +42,8 @@ pub enum ClockCfg {
         led: bool,
         #[serde(default)]
         clean: bool,
-        #[serde(default = "default_size")]
-        size: u8,
+        #[serde(default)]
+        scale: i8,
     },
     Timer {
         name: String,
@@ -56,16 +51,16 @@ pub enum ClockCfg {
         led: bool,
         #[serde(default)]
         clean: bool,
-        #[serde(default = "default_size")]
-        size: u8,
+        #[serde(default)]
+        scale: i8,
     },
     Stopwatch {
         name: String,
         led: bool,
         #[serde(default)]
         clean: bool,
-        #[serde(default = "default_size")]
-        size: u8,
+        #[serde(default)]
+        scale: i8,
     },
     Countdown {
         name: String,
@@ -73,8 +68,8 @@ pub enum ClockCfg {
         led: bool,
         #[serde(default)]
         clean: bool,
-        #[serde(default = "default_size")]
-        size: u8,
+        #[serde(default)]
+        scale: i8,
     },
 }
 
@@ -95,7 +90,7 @@ impl Default for Config {
             offset: None,
             led,
             clean: false,
-            size: DEFAULT_SIZE,
+            scale: 0,
         };
         Config {
             clocks: vec![
@@ -157,7 +152,7 @@ impl Config {
                     offset,
                     led,
                     clean,
-                    size,
+                    scale,
                 } => {
                     let source = match (zone, offset) {
                         (Some(z), _) => jiff::tz::TimeZone::get(z).ok().map(Source::Zone)?,
@@ -168,7 +163,7 @@ impl Config {
                         name: name.clone(),
                         source,
                         style: style_of(*led, *clean),
-                        size: *size,
+                        scale: *scale,
                     })
                 }
                 ClockCfg::Timer {
@@ -176,7 +171,7 @@ impl Config {
                     duration_ms,
                     led,
                     clean,
-                    size,
+                    scale,
                 } => Some(Clock::Timer {
                     name: name.clone(),
                     duration_ms: *duration_ms,
@@ -184,35 +179,35 @@ impl Config {
                     running: false,
                     last_start: now,
                     style: style_of(*led, *clean),
-                    size: *size,
+                    scale: *scale,
                     notified: false,
                 }),
                 ClockCfg::Stopwatch {
                     name,
                     led,
                     clean,
-                    size,
+                    scale,
                 } => Some(Clock::Stopwatch {
                     name: name.clone(),
                     elapsed_ms: 0,
                     running: false,
                     last_start: now,
                     style: style_of(*led, *clean),
-                    size: *size,
+                    scale: *scale,
                 }),
                 ClockCfg::Countdown {
                     name,
                     target_ms,
                     led,
                     clean,
-                    size,
+                    scale,
                 } => Timestamp::from_millisecond(*target_ms)
                     .ok()
                     .map(|target| Clock::Countdown {
                         name: name.clone(),
                         target,
                         style: style_of(*led, *clean),
-                        size: *size,
+                        scale: *scale,
                         notified: false,
                     }),
             })
@@ -234,7 +229,7 @@ impl Config {
                     name,
                     source,
                     style,
-                    size,
+                    scale,
                 } => {
                     let (zone, offset) = match source {
                         Source::Zone(tz) => (tz.iana_name().map(|s| s.to_string()), None),
@@ -247,14 +242,14 @@ impl Config {
                         offset,
                         led,
                         clean,
-                        size: *size,
+                        scale: *scale,
                     }
                 }
                 Clock::Timer {
                     name,
                     duration_ms,
                     style,
-                    size,
+                    scale,
                     ..
                 } => {
                     let (led, clean) = flags_of(*style);
@@ -263,25 +258,25 @@ impl Config {
                         duration_ms: *duration_ms,
                         led,
                         clean,
-                        size: *size,
+                        scale: *scale,
                     }
                 }
                 Clock::Stopwatch {
-                    name, style, size, ..
+                    name, style, scale, ..
                 } => {
                     let (led, clean) = flags_of(*style);
                     ClockCfg::Stopwatch {
                         name: name.clone(),
                         led,
                         clean,
-                        size: *size,
+                        scale: *scale,
                     }
                 }
                 Clock::Countdown {
                     name,
                     target,
                     style,
-                    size,
+                    scale,
                     ..
                 } => {
                     let (led, clean) = flags_of(*style);
@@ -290,7 +285,7 @@ impl Config {
                         target_ms: target.as_millisecond(),
                         led,
                         clean,
-                        size: *size,
+                        scale: *scale,
                     }
                 }
             })
@@ -330,9 +325,10 @@ mod tests {
     }
 
     #[test]
-    fn legacy_config_without_clean_or_size() {
-        // A file written before the clean/size fields existed must still load,
-        // defaulting clean=false (→ style follows `led`) and size=DEFAULT_SIZE.
+    fn legacy_config_without_clean_or_scale() {
+        // A file written before the clean/scale fields (and with the old `led`
+        // dot-matrix toggle) must still load: an old `led = true` now maps to
+        // the clean style, and a missing scale defaults to 0.
         let s = r#"
             layout = "grid"
             label_mode = "city"
@@ -343,29 +339,30 @@ mod tests {
             kind = "tz"
             name = "UTC"
             zone = "UTC"
-            led = false
+            led = true
+            size = 3
         "#;
         let cfg: Config = toml::from_str(s).unwrap();
         let clocks = cfg.to_clocks();
         assert_eq!(clocks.len(), 1);
-        assert_eq!(clocks[0].style(), ClockStyle::Plain);
-        assert_eq!(clocks[0].size(), DEFAULT_SIZE);
+        assert_eq!(clocks[0].style(), ClockStyle::Clean);
+        assert_eq!(clocks[0].scale(), 0);
     }
 
     #[test]
-    fn clean_style_round_trips() {
+    fn clean_style_and_scale_round_trip() {
         let clocks = vec![Clock::Tz {
             name: "UTC".into(),
             source: Source::Fixed(0),
             style: ClockStyle::Clean,
-            size: 5,
+            scale: 5,
         }];
         let cfg = Config::from_state(&clocks, Layout::Grid, LabelMode::City, "pool.ntp.org", true);
         let s = toml::to_string_pretty(&cfg).unwrap();
         let back: Config = toml::from_str(&s).unwrap();
         let out = back.to_clocks();
         assert_eq!(out[0].style(), ClockStyle::Clean);
-        assert_eq!(out[0].size(), 5);
+        assert_eq!(out[0].scale(), 5);
     }
 
     #[test]
