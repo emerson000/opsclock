@@ -39,6 +39,10 @@ pub const DESC: Color = rgb(0xa04338);
 pub const BORDER: Color = rgb(0x331110);
 /// Selected tile border (== LED).
 pub const BORDER_SEL: Color = rgb(0xff3b2f);
+/// Header / key-bar separator border.
+pub const BORDER_HEADER: Color = rgb(0x2a0e0b);
+/// Conversion-banner / input-bar border.
+pub const BORDER_BANNER: Color = rgb(0x4a1a14);
 
 /// Amber accent (day chip fg, conversion label text).
 pub const AMBER: Color = rgb(0xffb347);

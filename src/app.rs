@@ -1,7 +1,7 @@
 //! Application state and the keymap dispatcher (mirrors the prototype's `onKey`).
 
 use crate::config::Config;
-use crate::model::{Clock, LabelMode, Layout, Source};
+use crate::model::{Clock, LabelMode, Layout};
 use crate::ntp::{self, SyncState};
 use crate::time;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};

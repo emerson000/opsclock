@@ -24,7 +24,9 @@ pub fn glyph(c: char) -> [&'static str; 7] {
 
 /// Render `text` as 7 rows of dot-matrix art. Lit cells are `█`; unlit are space.
 /// With `ghost = true`, every cell is `█` (the dark off-segment backing layer).
-/// One blank column separates glyphs.
+/// One blank column separates glyphs. (The renderer builds colored spans directly
+/// from [`glyph`]; this string form backs the unit tests and any plain-text use.)
+#[allow(dead_code)]
 pub fn led_art(text: &str, ghost: bool) -> Vec<String> {
     let mut rows: Vec<String> = Vec::with_capacity(7);
     for r in 0..7 {
