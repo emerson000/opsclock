@@ -517,27 +517,32 @@ fn draw_tile_footer(f: &mut Frame, area: Rect, v: &View) {
 
 /// Body: the clean block art, or plain single-line text, centered. The per-clock
 /// `scale` is added to the auto-fit dot size, so `0` fits each layout naturally
-/// and `±` grows/shrinks from there (ratatui clips anything past the area).
+/// and `±` grows/shrinks from there (ratatui clips anything past the area). The
+/// single row is the smallest block face (1 dot); shrinking below that collapses
+/// the clean clock to the compact single line, so `-` keeps scaling it down.
 fn draw_body(f: &mut Frame, area: Rect, v: &View) {
     let dim = v.expired && v.blink_off;
     let color = if dim { c::DIMMEST } else { c::LED };
-    if v.style == ClockStyle::Plain {
-        let vpad = area.height.saturating_sub(1) / 2;
-        let mut all: Vec<Line> = Vec::new();
-        for _ in 0..vpad {
-            all.push(Line::from(""));
+
+    // Dots-per-cell for the block face, or None to render the single line.
+    let dots = match v.style {
+        ClockStyle::Plain => None,
+        ClockStyle::Clean => {
+            let n_glyphs = v.time_text.chars().count();
+            let fit = crate::led::dot_fit(n_glyphs, area.width, area.height) as i32;
+            let target = fit + v.scale as i32;
+            (target >= 1).then_some(target as usize)
         }
-        all.push(Line::from(Span::styled(
+    };
+
+    let lines = match dots {
+        None => vec![Line::from(Span::styled(
             v.time_text.clone(),
             Style::default().fg(color).add_modifier(Modifier::BOLD),
-        )));
-        f.render_widget(Paragraph::new(all).alignment(Alignment::Center), area);
-        return;
-    }
-    let n_glyphs = v.time_text.chars().count();
-    let fit = crate::led::dot_fit(n_glyphs, area.width, area.height) as i32;
-    let dots = (fit + v.scale as i32).max(1) as usize;
-    let lines = build_art(&v.time_text, dots, color);
+        ))],
+        Some(d) => build_art(&v.time_text, d, color),
+    };
+
     let art_h = lines.len() as u16;
     let vpad = area.height.saturating_sub(art_h) / 2;
     let mut all: Vec<Line> = Vec::new();
