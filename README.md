@@ -10,6 +10,8 @@ Built with [ratatui](https://ratatui.rs) + crossterm, [jiff](https://docs.rs/jif
 (bundled tz database, so it works on musl/Windows without system tzdata), clap,
 serde/toml, and color-eyre.
 
+![Opsclock demo](/docs/images/opsclock_demo_grid.png)
+
 ## Install
 
 Install the `opsclock` binary to `~/.cargo/bin` (make sure that's on your `PATH`):
