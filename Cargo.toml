@@ -3,11 +3,20 @@ name = "opsclock"
 version = "0.1.0"
 edition = "2021"
 description = "Mission-control-style terminal world-clock TUI"
+license = "MIT"
 authors = ["emerson000"]
 repository = "https://git.ribbon-stairs.ts.net/emerson/opsclock"
 readme = "README.md"
 keywords = ["clock", "tui", "terminal", "world-clock", "timezone"]
 categories = ["command-line-utilities"]
+
+[package.metadata.deb]
+section = "utils"
+extended-description = """\
+Multiple world clocks (by city or UTC offset), NASA-style countdown timers \
+and stopwatches, point-in-time conversion across every clock, four layouts, \
+resizable plain and LED display styles, and real NTP server sync. \
+Keyboard-first terminal UI built with ratatui."""
 
 [[bin]]
 name = "opsclock"
