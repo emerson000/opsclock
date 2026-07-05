@@ -14,6 +14,27 @@ serde/toml, and color-eyre.
 
 ## Install
 
+### Debian / Ubuntu (.deb)
+
+Grab the latest release — these URLs always point at the newest version:
+
+```sh
+wget https://github.com/emerson000/opsclock/releases/latest/download/opsclock_amd64.deb
+sudo apt install ./opsclock_amd64.deb
+```
+
+Or the plain binary tarball:
+
+```sh
+wget https://github.com/emerson000/opsclock/releases/latest/download/opsclock-x86_64-linux.tar.gz
+tar xzf opsclock-x86_64-linux.tar.gz
+```
+
+Versioned artifacts for every release are on the
+[releases page](https://github.com/emerson000/opsclock/releases).
+
+### With cargo
+
 Install the `opsclock` binary to `~/.cargo/bin` (make sure that's on your `PATH`):
 
 ```sh

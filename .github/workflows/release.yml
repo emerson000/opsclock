@@ -43,10 +43,18 @@ jobs:
           cp target/release/opsclock README.md LICENSE "$STAGE/"
           tar czf "$STAGE.tar.gz" "$STAGE"
 
+      # Version-less copies so /releases/latest/download/<name> is a stable URL.
+      - name: Stable-name copies
+        run: |
+          cp target/debian/*.deb opsclock_amd64.deb
+          cp opsclock-*-x86_64-unknown-linux-gnu.tar.gz opsclock-x86_64-linux.tar.gz
+
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
           files: |
             target/debian/*.deb
-            opsclock-*.tar.gz
+            opsclock-*-x86_64-unknown-linux-gnu.tar.gz
+            opsclock_amd64.deb
+            opsclock-x86_64-linux.tar.gz
           generate_release_notes: true
